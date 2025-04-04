@@ -1,0 +1,10 @@
+/build
+/vendor
+
+/data/proto
+/data/packetIds.json
+
+.DS_Store
+
+*.pcapng
+/.idea
