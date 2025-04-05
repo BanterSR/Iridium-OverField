@@ -31,16 +31,10 @@ func getDataMap() map[string]*session {
 	return dataMap
 }
 
-func delData(key string, len uint16) {
-	if dataMap == nil {
-		dataMap = make(map[string]*session)
+func (s *session) delData(lens uint16) {
+	if uint16(len(s.data)) <= lens {
+		s.data = make([]byte, 0)
+		return
 	}
-	if dataMap[key] == nil {
-		dataMap[key] = &session{
-			fromServer: false,
-			key:        key,
-			data:       make([]byte, 0),
-		}
-	}
-	dataMap[key].data = dataMap[key].data[len:]
+	s.data = s.data[lens:]
 }

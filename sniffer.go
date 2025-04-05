@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/golang/protobuf/proto"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -127,7 +128,7 @@ func startSniffer() {
 }
 
 func handleTcp(capTime time.Time) {
-	for key, s := range getDataMap() {
+	for _, s := range getDataMap() {
 		if len(s.data) < tcpHeadSize {
 			continue
 		}
@@ -138,58 +139,56 @@ func handleTcp(capTime time.Time) {
 		}
 		headBin := s.data[tcpHeadSize : int(headLen)+tcpHeadSize]
 
-		dMsg, err := parseProtoByName(headName, headBin)
+		head := new(PacketHead)
+		err := proto.Unmarshal(headBin, head)
 		if err != nil {
 			log.Printf("Could not parse PacketHead proto Error:%s\n", err)
-			delData(key, uint16(len(s.data)))
+			s.delData(uint16(len(s.data)))
 			continue
 		}
-		oj, err := dMsg.MarshalJSON()
-		if err != nil {
-			log.Printf("Could not parse PacketHead proto Error:%s\n", err)
-			delData(key, uint16(len(s.data)))
-			continue
-		}
-		var objectJson interface{}
-		err = json.Unmarshal(oj, &objectJson)
-		if err != nil {
-			log.Printf("Could not parse PacketHead proto Error:%s\n", err)
-			delData(key, uint16(len(s.data)))
-			continue
-		}
-		head := objectJson.(map[string]interface{})
+
 		s.handleProtoPacket(head, headLen, s.fromServer, capTime)
 	}
 }
 
-func (s *session) handleProtoPacket(head map[string]interface{}, headLen uint16, fromServer bool, timestamp time.Time) {
-	cmdId := head["msgId"].(float64)
-	bodyLen := float64(0)
-	if head["bodyLen"] != nil {
-		bodyLen = head["bodyLen"].(float64)
-	}
-
-	if uint32(len(s.data)) < uint32(headLen)+uint32(bodyLen)+tcpHeadSize {
+func (s *session) handleProtoPacket(head *PacketHead, headLen uint16, fromServer bool, timestamp time.Time) {
+	if uint32(len(s.data)) < uint32(headLen)+head.BodyLen+tcpHeadSize {
 		return
 	}
-	bodyBin := s.data[uint32(headLen)+tcpHeadSize : uint32(headLen)+uint32(bodyLen)+tcpHeadSize]
+	bodyBin := s.data[uint32(headLen)+tcpHeadSize : uint32(headLen)+head.BodyLen+tcpHeadSize]
 
 	fmt.Println(head) // TODO log head
 
-	objectJson, err := parseProtoToInterface(uint16(cmdId), bodyBin)
+	bodyBin = handleFlag(head.Flag, bodyBin)
+
+	objectJson, err := parseProtoToInterface(uint16(head.MsgId), bodyBin)
 	if err != nil {
 		bodyPb, err := DynamicParse(bodyBin)
 		if err != nil {
 			fmt.Printf("err body:%s\n", base64.StdEncoding.EncodeToString(bodyBin))
 			goto to
 		}
-		buildPacketToSend(bodyBin, s.fromServer, timestamp, uint16(cmdId), bodyPb)
+		buildPacketToSend(bodyBin, s.fromServer, timestamp, uint16(head.MsgId), bodyPb)
 	} else {
-		buildPacketToSend(bodyBin, fromServer, timestamp, uint16(cmdId), objectJson)
+		buildPacketToSend(bodyBin, fromServer, timestamp, uint16(head.MsgId), objectJson)
 	}
 
 to:
-	delData(s.key, headLen+uint16(bodyLen)+tcpHeadSize)
+	s.delData(headLen + uint16(head.BodyLen) + tcpHeadSize)
+}
+
+func handleFlag(flag uint32, body []byte) []byte {
+	switch flag {
+	case 0:
+		// 不处理
+		return body
+	case 1:
+		// TODO
+		return body
+	default:
+		log.Printf("Unknown flag:%d\n", flag)
+		return body
+	}
 }
 
 func buildPacketToSend(data []byte, fromSever bool, timestamp time.Time, packetId uint16, objectJson interface{}) {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	"github.com/bytedance/sonic"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
@@ -66,13 +65,4 @@ func processBytes(data []byte) interface{} {
 		return nestedMessage
 	}
 	return data
-}
-
-func test(bin []byte) {
-	parsedData, err := DynamicParse(bin)
-	if err != nil {
-		fmt.Printf("failed to parse proto message: %v\n", err)
-	}
-	str, _ := sonic.MarshalIndent(parsedData, "", "  ")
-	fmt.Println(string(str))
 }
