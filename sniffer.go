@@ -13,6 +13,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -132,7 +133,7 @@ func handleTcp(capTime time.Time) {
 		if len(s.data) < tcpHeadSize {
 			continue
 		}
-		// 头部长度
+		// 头部
 		headLen := binary.BigEndian.Uint16(s.data[:tcpHeadSize])
 		if len(s.data) < int(headLen)+tcpHeadSize {
 			continue
@@ -146,7 +147,7 @@ func handleTcp(capTime time.Time) {
 			s.delData(uint16(len(s.data)))
 			continue
 		}
-
+		// 主体
 		s.handleProtoPacket(head, headLen, s.fromServer, capTime)
 	}
 }
@@ -157,7 +158,7 @@ func (s *session) handleProtoPacket(head *PacketHead, headLen uint16, fromServer
 	}
 	bodyBin := s.data[uint32(headLen)+tcpHeadSize : uint32(headLen)+head.BodyLen+tcpHeadSize]
 
-	fmt.Println(head) // TODO log head
+	// fmt.Println(head)
 
 	bodyBin = handleFlag(head.Flag, bodyBin)
 
@@ -183,8 +184,9 @@ func handleFlag(flag uint32, body []byte) []byte {
 		// 不处理
 		return body
 	case 1:
-		// TODO
-		return body
+		var dst []byte
+		dst, _ = snappy.Decode(nil, body)
+		return dst
 	default:
 		log.Printf("Unknown flag:%d\n", flag)
 		return body
