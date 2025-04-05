@@ -1,4 +1,4 @@
-# Iridium-Ww
+# Iridium-OverField
 
 A KCP packet sniffer + visualizer in one, backend rewritten in Go.
 
@@ -8,7 +8,7 @@ A KCP packet sniffer + visualizer in one, backend rewritten in Go.
 
 你可以从Actions中下载到编译好的，或者自己从源码构建。
 
-0. 往 `data/` 目录放入 `packetIds.json`, `privateKey.pem` 和 `WutheringWaves.proto` 文件.
+0. 往 `data/` 目录放入 `packetIds.json` 和 `OverField.proto` 文件.
 1. 确保你已安装 [Npcap driver](https://npcap.com/#download) 或 wireshark.
 2. 使用命令 `-l` 列出电脑上所有网卡，编辑 `config.json` 设置网卡设备, 或者使用命令 `-ip 192.x.x.x` 自动通过ip寻找设备.
 3. 修改`config.json`中的 `minPort` 和 `maxPort` 设置端口范围
@@ -24,6 +24,8 @@ A KCP packet sniffer + visualizer in one, backend rewritten in Go.
   "packetFilter" : [ // 这里列出的包名将不会在前端显示
     ""
   ],
-  "autoSavePcapFiles" : true // 自动保存抓包记录文件
+  "autoSavePcapFiles" : true, // 自动保存抓包记录文件
+  "maxPort": 11100, // 端口监听范围
+  "minPort": 11000
 }
 ```

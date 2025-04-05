@@ -99,28 +99,31 @@ func parseProtoByName(name string, data []byte) (*dynamic.Message, error) {
 	return dMsg, err
 }
 
-func parseProtoToJson(id uint16, data []byte) string {
+func parseProtoToJson(id uint16, data []byte) (string, error) {
 	dMsg, err := parseProto(id, data)
 	if err != nil {
-		return ""
+		return "", err
 	}
 
 	marshalJSON, err := dMsg.MarshalJSON()
 	if err != nil {
-		return ""
+		return "", err
 	}
 
-	return string(marshalJSON)
+	return string(marshalJSON), nil
 }
 
-func parseProtoToInterface(id uint16, data []byte) *interface{} {
-	object := parseProtoToJson(id, data)
-
-	var result *interface{}
-	err := json.Unmarshal([]byte(object), &result)
+func parseProtoToInterface(id uint16, data []byte) (*interface{}, error) {
+	object, err := parseProtoToJson(id, data)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	return result
+	var result *interface{}
+	err = json.Unmarshal([]byte(object), &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }

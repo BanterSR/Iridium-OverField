@@ -1,68 +1,46 @@
 package main
 
-import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
-	"errors"
-	"hash/crc32"
+var dataMap map[string]*session
+
+const (
+	buffLen     = 512000
+	tcpHeadSize = 2
 )
 
-func RsaParsePrivKey(privKeyPem []byte) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode(privKeyPem)
-	if block == nil {
-		return nil, errors.New("invalid rsa private key")
-	}
-	privKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	return privKey, nil
+type session struct {
+	fromServer bool
+	key        string
+	data       []byte
 }
 
-func RsaDecryptPrivKey(encData []byte, privKey *rsa.PrivateKey) (decData []byte, err error) {
-	return rsa.DecryptPKCS1v15(rand.Reader, privKey, encData)
-}
-
-func crc32Hash(data []byte) uint32 {
-	Hash32 := crc32.NewIEEE()
-	Hash32.Write(data)
-	return Hash32.Sum32()
-}
-
-var dataMap map[string][]byte
-
-func addDataMap(key string, data []byte) {
+func addDataMap(key string, data []byte, fromServer bool) {
 	if dataMap == nil {
-		dataMap = make(map[string][]byte)
+		dataMap = make(map[string]*session)
 	}
 	if dataMap[key] == nil {
-		dataMap[key] = make([]byte, 0)
+		dataMap[key] = &session{
+			fromServer: fromServer,
+			key:        key,
+			data:       make([]byte, 0),
+		}
 	}
-	dataMap[key] = append(dataMap[key], data...)
+	dataMap[key].data = append(dataMap[key].data, data...)
 }
 
-func getData(key string) []byte {
-	if dataMap == nil {
-		dataMap = make(map[string][]byte)
-	}
-	if dataMap[key] == nil {
-		dataMap[key] = make([]byte, 0)
-	}
-	return dataMap[key]
-}
-
-func getDataMap() map[string][]byte {
+func getDataMap() map[string]*session {
 	return dataMap
 }
 
 func delData(key string, len uint16) {
 	if dataMap == nil {
-		dataMap = make(map[string][]byte)
+		dataMap = make(map[string]*session)
 	}
 	if dataMap[key] == nil {
-		dataMap[key] = make([]byte, 0)
+		dataMap[key] = &session{
+			fromServer: false,
+			key:        key,
+			data:       make([]byte, 0),
+		}
 	}
-	dataMap[key] = dataMap[key][len:]
+	dataMap[key].data = dataMap[key].data[len:]
 }

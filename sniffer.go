@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/fatih/color"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -103,8 +102,6 @@ func startSniffer() {
 			}
 		}
 
-		// fmt.Println(packet.Dump())
-
 		transportLayer := packet.TransportLayer()
 		if transportLayer == nil {
 			continue
@@ -124,85 +121,75 @@ func startSniffer() {
 		fromServer := config.MinPort <= tcp.SrcPort && tcp.SrcPort <= config.MaxPort
 		key := fmt.Sprintf("%v;%v;%v", tcp.SrcPort, tcp.DstPort, fromServer)
 
-		addDataMap(key, data)
+		addDataMap(key, data, fromServer)
 		handleTcp(capTime)
 	}
 }
 
-const (
-	tcpHeadSize = 2
-)
-
 func handleTcp(capTime time.Time) {
-	for key, data := range getDataMap() {
-		if len(data) < tcpHeadSize {
+	for key, s := range getDataMap() {
+		if len(s.data) < tcpHeadSize {
 			continue
 		}
 		// 头部长度
-		headLen := binary.BigEndian.Uint16(data[:tcpHeadSize])
-		if len(data) < int(headLen)+tcpHeadSize {
+		headLen := binary.BigEndian.Uint16(s.data[:tcpHeadSize])
+		if len(s.data) < int(headLen)+tcpHeadSize {
 			continue
 		}
-		headBin := data[tcpHeadSize : int(headLen)+tcpHeadSize]
+		headBin := s.data[tcpHeadSize : int(headLen)+tcpHeadSize]
 
 		dMsg, err := parseProtoByName(headName, headBin)
 		if err != nil {
 			log.Printf("Could not parse PacketHead proto Error:%s\n", err)
-			delData(key, uint16(len(data)))
+			delData(key, uint16(len(s.data)))
 			continue
 		}
 		oj, err := dMsg.MarshalJSON()
 		if err != nil {
 			log.Printf("Could not parse PacketHead proto Error:%s\n", err)
-			delData(key, uint16(len(data)))
+			delData(key, uint16(len(s.data)))
 			continue
 		}
 		var objectJson interface{}
 		err = json.Unmarshal(oj, &objectJson)
 		if err != nil {
 			log.Printf("Could not parse PacketHead proto Error:%s\n", err)
-			delData(key, uint16(len(data)))
+			delData(key, uint16(len(s.data)))
 			continue
 		}
 		head := objectJson.(map[string]interface{})
-
-		cmdId := head["msgId"].(float64)
-		bodyLen := float64(0)
-		if head["bodyLen"] != nil {
-			bodyLen = head["bodyLen"].(float64)
-		}
-		fmt.Println(head)
-
-		if uint32(len(data)) < uint32(headLen)+uint32(bodyLen)+tcpHeadSize {
-			continue
-		}
-		bodyBin := data[uint32(headLen)+tcpHeadSize : uint32(headLen)+uint32(bodyLen)+tcpHeadSize]
-
-		bodyPb, err := DynamicParse(bodyBin)
-		if err != nil {
-			fmt.Printf("%s\n", base64.StdEncoding.EncodeToString(bodyBin))
-			delData(key, headLen+uint16(bodyLen)+tcpHeadSize)
-			continue
-		}
-		str, _ := sonic.MarshalIndent(bodyPb, "", "  ")
-
-		fmt.Printf("Cmd:%s Body%s \n", GetProtoNameById(uint16(cmdId)), str)
-
-		delData(key, headLen+uint16(bodyLen)+tcpHeadSize)
+		s.handleProtoPacket(head, headLen, s.fromServer, capTime)
 	}
-
 }
 
-func handleProtoPacket(data []byte, fromServer bool, timestamp time.Time) {
-	msgList := make([]*PackMsg, 0)
-	// DecodeLoop(key, &msgList, aesEcb)
-	for _, msg := range msgList {
-		packetId := msg.CmdId
-		objectJson := parseProtoToInterface(packetId, msg.ProtoData)
-		log.Printf("MsgType:%v,Seq:%v\n", msg.MsgType, msg.Seq)
-
-		buildPacketToSend(msg.ProtoData, fromServer, timestamp, packetId, objectJson)
+func (s *session) handleProtoPacket(head map[string]interface{}, headLen uint16, fromServer bool, timestamp time.Time) {
+	cmdId := head["msgId"].(float64)
+	bodyLen := float64(0)
+	if head["bodyLen"] != nil {
+		bodyLen = head["bodyLen"].(float64)
 	}
+
+	if uint32(len(s.data)) < uint32(headLen)+uint32(bodyLen)+tcpHeadSize {
+		return
+	}
+	bodyBin := s.data[uint32(headLen)+tcpHeadSize : uint32(headLen)+uint32(bodyLen)+tcpHeadSize]
+
+	fmt.Println(head) // TODO log head
+
+	objectJson, err := parseProtoToInterface(uint16(cmdId), bodyBin)
+	if err != nil {
+		bodyPb, err := DynamicParse(bodyBin)
+		if err != nil {
+			fmt.Printf("err body:%s\n", base64.StdEncoding.EncodeToString(bodyBin))
+			goto to
+		}
+		buildPacketToSend(bodyBin, s.fromServer, timestamp, uint16(cmdId), bodyPb)
+	} else {
+		buildPacketToSend(bodyBin, fromServer, timestamp, uint16(cmdId), objectJson)
+	}
+
+to:
+	delData(s.key, headLen+uint16(bodyLen)+tcpHeadSize)
 }
 
 func buildPacketToSend(data []byte, fromSever bool, timestamp time.Time, packetId uint16, objectJson interface{}) {
@@ -233,14 +220,12 @@ func logPacket(packet *Packet) {
 		from = "[Server]"
 	}
 	forward := ""
-	if strings.Contains(packet.PacketName, "Response") {
+	if strings.Contains(packet.PacketName, "Rsp") {
 		forward = "<--"
-	} else if strings.Contains(packet.PacketName, "Request") {
+	} else if strings.Contains(packet.PacketName, "Req") {
 		forward = "-->"
-	} else if strings.Contains(packet.PacketName, "Notify") && packet.FromServer {
+	} else if strings.Contains(packet.PacketName, "Notice") && packet.FromServer {
 		forward = "<-i"
-	} else if strings.Contains(packet.PacketName, "Push") {
-		forward = "i->"
 	}
 
 	log.Println(color.GreenString(from),
